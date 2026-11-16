@@ -1,0 +1,359 @@
+<!DOCTYPE html>
+<html lang="zh-Hant">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+<title>環形展廳改造</title>
+<style>
+/* Layout: a real 3D room (WebGL) on the left, eight improvement switches on the right.
+   Single dark UI on purpose: it is used on a projector and on phones scanned from a QR code. */
+:root{--bg:#0E1311;--panel:#161D1A;--line:#2A3631;--fg:#F1EEE6;--muted:#A3AEA8;--accent:#E3B455;--accent-ink:#1A1408;
+  --sans:"Noto Sans TC","PingFang TC","Microsoft JhengHei",system-ui,sans-serif;--serif:"Noto Serif TC","Songti TC","PMingLiU",serif;color-scheme:dark}
+*{box-sizing:border-box}
+html,body{height:100%;margin:0}
+body{background:var(--bg);color:var(--fg);font-family:var(--sans);font-size:15px;overflow:hidden;
+  padding:max(12px,env(safe-area-inset-top)) max(16px,env(safe-area-inset-right)) max(12px,env(safe-area-inset-bottom)) max(16px,env(safe-area-inset-left))}
+button{font:inherit;color:inherit}
+.app{height:100%;display:grid;grid-template-columns:minmax(0,1fr) 310px;grid-template-rows:auto minmax(0,1fr);gap:10px 18px}
+header{grid-column:1/-1;display:flex;align-items:baseline;gap:14px;flex-wrap:wrap}
+header h1{margin:0;font:900 22px/1.2 var(--serif);letter-spacing:.06em}
+header p{margin:0;color:var(--muted);font-size:13px}
+.stage{position:relative;min-width:0;min-height:0;border-radius:6px;overflow:hidden;background:#000;touch-action:none;cursor:grab}
+.stage.grab{cursor:grabbing}
+.stage canvas{display:block;width:100%;height:100%}
+.hud{position:absolute;left:50%;top:14px;transform:translateX(-50%);padding:8px 18px;border-radius:4px;background:rgba(14,19,17,.88);font-size:20px;font-weight:700;opacity:0;transition:opacity .3s;white-space:nowrap;pointer-events:none}
+.hud.on{opacity:1}
+.badge{position:absolute;left:12px;bottom:12px;padding:6px 12px;border-radius:4px;background:rgba(14,19,17,.8);font-size:13px;color:var(--muted);pointer-events:none}
+.msg{position:absolute;inset:0;display:grid;place-items:center;color:var(--muted);font-size:16px;background:#0E1311;text-align:center;padding:20px}
+aside{min-height:0;display:flex;flex-direction:column;gap:8px;overflow:auto}
+.steps{display:flex;flex-direction:column;gap:5px}
+.step{display:grid;grid-template-columns:22px minmax(0,1fr) auto;gap:10px;align-items:center;padding:8px 11px;border:1px solid var(--line);border-radius:6px;background:var(--panel);cursor:pointer;text-align:left;width:100%}
+.step:hover{border-color:#44544c}
+.step:focus-visible,.btn:focus-visible{outline:2px solid var(--accent);outline-offset:2px}
+.step .n{font-weight:700;color:var(--muted);text-align:center}
+.step b{display:block;font-size:15px;line-height:1.3}
+.step small{display:block;color:var(--muted);font-size:12px;line-height:1.3;margin-top:1px}
+.sw{width:38px;height:22px;border-radius:11px;background:#33403a;position:relative;transition:background .2s}
+.sw::after{content:"";position:absolute;left:3px;top:3px;width:16px;height:16px;border-radius:50%;background:#C9D1CC;transition:transform .2s}
+.step[aria-pressed="true"]{border-color:var(--accent);background:#211d12}
+.step[aria-pressed="true"] .n{color:var(--accent)}
+.step[aria-pressed="true"] .sw{background:var(--accent)}
+.step[aria-pressed="true"] .sw::after{transform:translateX(16px);background:var(--accent-ink)}
+.dim{padding:8px 11px;border:1px solid var(--line);border-radius:6px;background:var(--panel)}
+.dim label{display:flex;justify-content:space-between;font-size:13px;color:var(--muted)}
+.dim output{color:var(--fg);font-weight:700;font-variant-numeric:tabular-nums}
+.dim input{width:100%;accent-color:var(--accent);margin:6px 0 0}
+.row{display:grid;grid-template-columns:1fr 1fr;gap:6px}
+.btn{padding:9px 10px;border-radius:6px;border:1px solid var(--line);background:var(--panel);cursor:pointer;font-weight:700;font-size:14px}
+.btn:hover{border-color:#44544c}
+.btn.pri{background:var(--accent);color:var(--accent-ink);border-color:var(--accent)}
+.help{font-size:12px;line-height:1.6;color:var(--muted);border-top:1px solid var(--line);padding-top:8px;margin:0}
+.help kbd{font-family:inherit;font-size:11px;padding:0 4px;border:1px solid var(--line);border-radius:3px;color:var(--fg)}
+@media (max-width:860px){
+  body{overflow:auto}
+  .app{grid-template-columns:1fr;grid-template-rows:auto 56vh auto;height:auto}
+  .help kbd{display:none}
+}
+@media (prefers-reduced-motion:reduce){.sw,.sw::after,.hud{transition:none}}
+</style>
+</head>
+<body>
+<div class="app">
+  <header>
+    <h1>特展廳改造模擬</h1>
+    <p>戲偶為本組在雲林布袋戲館現場拍攝後去背　｜　開關每一項改進，拖曳畫面可以繞著看</p>
+  </header>
+  <div class="stage" id="stage">
+    <p class="hud" id="hud"></p>
+    <p class="badge" id="badge">現況</p>
+    <div class="msg" id="msg">載入展廳中…</div>
+  </div>
+  <aside>
+    <div class="steps" id="steps"></div>
+    <div class="dim">
+      <label for="amb">天花板日光燈 <output id="ambv">100%</output></label>
+      <input type="range" id="amb" min="10" max="100" value="100">
+    </div>
+    <div class="row">
+      <button class="btn pri" id="play" type="button">依序展示</button>
+      <button class="btn" id="ab" type="button">改造前 ⇄ 後</button>
+      <button class="btn" id="reset" type="button">回到現況</button>
+      <button class="btn" id="fs" type="button">全螢幕</button>
+    </div>
+    <p class="help">拖曳旋轉視角，滾輪或雙指縮放。<br>
+      <kbd>1</kbd>–<kbd>8</kbd> 開關各項　<kbd>空白</kbd> 依序展示　<kbd>B</kbd> 改造前後　<kbd>0</kbd> 回到現況</p>
+  </aside>
+</div>
+
+<script src="three.min.js"></script>
+<script>
+(() => {
+'use strict';
+const $ = id => document.getElementById(id);
+const stage = $('stage');
+if (!window.THREE) { $('msg').textContent = '3D 元件載入失敗，請重新整理頁面。'; return; }
+const reduce = matchMedia('(prefers-reduced-motion: reduce)').matches;
+
+const STEPS = [
+  { id: 'curtain', t: '窗戶加窗簾',     s: '對應：日照、反光' },
+  { id: 'lights',  t: '關掉部分日光燈', s: '對應：照明太平' },
+  { id: 'glare',   t: '調整燈的角度',   s: '對應：展板反光' },
+  { id: 'spots',   t: '投射燈打戲偶',   s: '對應：戲偶沒有立體感' },
+  { id: 'back',    t: '背景換深色',     s: '對應：布條搶走視線' },
+  { id: 'reduce',  t: '減少展品數量',   s: '對應：太擠、保存' },
+  { id: 'labels',  t: '加上新說明牌',   s: '對應：說明牌只有名字' },
+  { id: 'acrylic', t: '主角加壓克力罩', s: '對應：沒有防護' }
+];
+const on = {}; STEPS.forEach(s => on[s.id] = false);
+const v = { tc: 0, amb: 1, tg: 0, ts: 0, tb: 0, tr: 0, tl: 0, ta: 0 }, tgt = { ...v };
+
+// x0/z0: crowded position today. slot: where a kept puppet goes after thinning out.
+const PUPPETS = [
+  { f: 't1',   h: 0.92, x0: -3.05, z0: -2.75 },
+  { f: 'bai',  h: 1.00, x0: -2.45, z0: -3.25, slot: 0, name: '聖俠 白雲生',      sub: '《聖俠白雲生》主角' },
+  { f: 'r1',   h: 0.95, x0: -1.85, z0: -2.7 },
+  { f: 'jian', h: 1.08, x0: -1.25, z0: -3.25, slot: 1, name: '華山之巔 劍至尊',  sub: '廖文和布袋戲團' },
+  { f: 't4',   h: 0.85, x0: -0.7,  z0: -2.65 },
+  { f: 'meng', h: 1.10, x0: 0.15,  z0: -3.2,  slot: 2, name: '孟智勝・賽西施',   sub: '《大勇俠》大勇俠與是非分明' },
+  { f: 'r4',   h: 0.95, x0: 1.0,   z0: -2.65 },
+  { f: 't2',   h: 1.00, x0: 1.55,  z0: -3.25, slot: 3, name: '千年魔尊',         sub: '廖文和布袋戲團' },
+  { f: 't3',   h: 0.95, x0: 2.2,   z0: -2.7 },
+  { f: 'r3',   h: 1.02, x0: 2.85,  z0: -3.2,  slot: 4, name: '飛刀女俠 雷鷹',    sub: '廖文和布袋戲團' }
+];
+const SLOT_X = [-2.7, -1.35, 0, 1.35, 2.7], SLOT_H = [0.18, 0.3, 0.45, 0.3, 0.18];
+const TOP = 0.9, TZ = -3.0;   // table top height and centre depth
+
+// ---------- renderer ----------
+let renderer;
+try { renderer = new THREE.WebGLRenderer({ antialias: true, preserveDrawingBuffer: true }); }
+catch (e) { $('msg').textContent = '這台裝置不支援 3D 顯示（WebGL）。'; return; }
+renderer.setPixelRatio(Math.min(devicePixelRatio || 1, 2));
+renderer.outputEncoding = THREE.sRGBEncoding;
+renderer.toneMapping = THREE.ACESFilmicToneMapping; renderer.toneMappingExposure = 1.05;
+stage.prepend(renderer.domElement);
+const scene = new THREE.Scene(); scene.background = new THREE.Color(0x050706);
+const camera = new THREE.PerspectiveCamera(42, 1, 0.1, 60);
+
+const loader = new THREE.TextureLoader();
+let pending = 0;
+function tex(url) { pending++; const t = loader.load(url, () => { pending--; dirty = true; }, undefined, () => { pending--; }); t.encoding = THREE.sRGBEncoding; t.anisotropy = 4; return t; }
+function canvasTex(w, h, draw) { const c = document.createElement('canvas'); c.width = w; c.height = h; draw(c.getContext('2d'), w, h); const t = new THREE.CanvasTexture(c); t.encoding = THREE.sRGBEncoding; t.anisotropy = 4; return t; }
+const std = o => new THREE.MeshStandardMaterial(Object.assign({ roughness: 0.95, metalness: 0 }, o));
+function box(w, h, d, mat, x, y, z) { const m = new THREE.Mesh(new THREE.BoxGeometry(w, h, d), mat); m.position.set(x, y, z); scene.add(m); return m; }
+function plane(w, h, mat, x, y, z) { const m = new THREE.Mesh(new THREE.PlaneGeometry(w, h), mat); m.position.set(x, y, z); scene.add(m); return m; }
+
+// ---------- room ----------
+const RW = 12, RH = 4, ZB = -4.2, ZF = 6;
+const floorT = canvasTex(512, 512, (c, w, h) => { c.fillStyle = '#cdbfa6'; c.fillRect(0, 0, w, h); c.strokeStyle = 'rgba(120,105,85,.55)'; c.lineWidth = 3; c.strokeRect(0, 0, w, h); });
+floorT.wrapS = floorT.wrapT = THREE.RepeatWrapping; floorT.repeat.set(10, 9);
+const floor = plane(RW, ZF - ZB, std({ map: floorT, roughness: 0.55 }), 0, 0, (ZF + ZB) / 2); floor.rotation.x = -Math.PI / 2;
+const ceilT = canvasTex(512, 512, (c, w, h) => { c.fillStyle = '#e6e9e4'; c.fillRect(0, 0, w, h); c.strokeStyle = '#4f8c68'; c.lineWidth = 14; c.strokeRect(0, 0, w, h); });
+ceilT.wrapS = ceilT.wrapT = THREE.RepeatWrapping; ceilT.repeat.set(6, 5);
+const ceil = plane(RW, ZF - ZB, std({ map: ceilT }), 0, RH, (ZF + ZB) / 2); ceil.rotation.x = Math.PI / 2;
+const wallM = std({ color: 0xf0eee6 });
+plane(RW, RH, wallM, 0, RH / 2, ZB);
+const wl = plane(ZF - ZB, RH, wallM, -RW / 2, RH / 2, (ZF + ZB) / 2); wl.rotation.y = Math.PI / 2;
+const wr = plane(ZF - ZB, RH, wallM, RW / 2, RH / 2, (ZF + ZB) / 2); wr.rotation.y = -Math.PI / 2;
+
+// windows on the side walls, with daylight and curtains
+const winT = canvasTex(256, 384, (c, w, h) => { const g = c.createLinearGradient(0, 0, 0, h); g.addColorStop(0, '#ffffff'); g.addColorStop(1, '#dff1ff'); c.fillStyle = g; c.fillRect(0, 0, w, h); c.strokeStyle = '#4f8c68'; c.lineWidth = 12; for (let i = 0; i <= 3; i++) { c.beginPath(); c.moveTo(i * w / 3, 0); c.lineTo(i * w / 3, h); c.stroke(); } for (let j = 0; j <= 4; j++) { c.beginPath(); c.moveTo(0, j * h / 4); c.lineTo(w, j * h / 4); c.stroke(); } });
+const curT = canvasTex(256, 64, (c, w, h) => { for (let x = 0; x < w; x += 16) { c.fillStyle = (x / 16) % 2 ? '#2b2522' : '#3c3531'; c.fillRect(x, 0, 16, h); } });
+const winMats = [], curtains = [], patches = [];
+[[-1, -1.6], [-1, 2.2], [1, -1.6], [1, 2.2]].forEach(([side, z]) => {
+  const m = new THREE.MeshBasicMaterial({ map: winT }); winMats.push(m);
+  const w = plane(1.5, 2.2, m, side * (RW / 2 - 0.02), 2.0, z); w.rotation.y = -side * Math.PI / 2;
+  const c = plane(1.7, 2.4, std({ map: curT }), side * (RW / 2 - 0.06), 2.0, z); c.rotation.y = -side * Math.PI / 2; curtains.push(c);
+  const p = plane(1.6, 3.2, new THREE.MeshBasicMaterial({ color: 0xfff6dc, transparent: true, opacity: 0.5, depthWrite: false }), side * (RW / 2 - 2.0), 0.012, z + 0.4);
+  p.rotation.x = -Math.PI / 2; p.rotation.z = side * 0.25; patches.push(p);
+});
+const sunL = new THREE.DirectionalLight(0xfff1d6, 0.5); sunL.position.set(-6, 3, 1); scene.add(sunL);
+const sunR = new THREE.DirectionalLight(0xfff1d6, 0.5); sunR.position.set(6, 3, 1); scene.add(sunR);
+
+// ceiling fluorescent panels
+const hemi = new THREE.HemisphereLight(0xffffff, 0xb8ab94, 1); scene.add(hemi);
+const fill = new THREE.DirectionalLight(0xf4f8ff, 0.5); fill.position.set(0, 4, 3); scene.add(fill);
+const tubeM = new THREE.MeshBasicMaterial({ color: 0xffffff });
+[[-3, -1.5], [3, -1.5], [-3, 2], [3, 2], [0, 0.2]].forEach(([x, z]) => box(1.6, 0.05, 0.5, tubeM, x, RH - 0.03, z));
+
+// table with turf top, like the real one
+box(7.6, TOP, 1.9, std({ color: 0x0c0c0d, roughness: 0.9 }), 0, TOP / 2, TZ);
+const turfT = canvasTex(128, 128, (c, w, h) => { c.fillStyle = '#4c8a3c'; c.fillRect(0, 0, w, h); for (let i = 0; i < 900; i++) { c.fillStyle = Math.random() < .5 ? '#3d7430' : '#62a04c'; c.fillRect(Math.random() * w, Math.random() * h, 2, 3); } });
+turfT.wrapS = turfT.wrapT = THREE.RepeatWrapping; turfT.repeat.set(12, 3);
+const turf = plane(7.6, 1.9, std({ map: turfT }), 0, TOP + 0.005, TZ); turf.rotation.x = -Math.PI / 2;
+
+// printed banner behind, and the plain dark panel that replaces it
+const banner = plane(6.2, 2.5, std({ map: tex('banner.jpg') }), 0, 2.35, ZB + 0.06);
+const darkPanel = plane(7.0, 2.9, std({ color: 0x0d100f, transparent: true, opacity: 0 }), 0, 2.3, ZB + 0.09);
+
+// glossy text board on the left wall with a hot spot of glare
+const boardT = canvasTex(512, 640, (c, w, h) => { c.fillStyle = '#2c4a66'; c.fillRect(0, 0, w, h); c.fillStyle = '#f2e9c8'; c.font = 'bold 54px sans-serif'; c.fillText('劇團簡介', 40, 90); c.fillStyle = 'rgba(255,255,255,.8)'; for (let i = 0; i < 16; i++) c.fillRect(40, 140 + i * 28, 300 + ((i * 97) % 130), 9); });
+const board = plane(1.9, 2.4, std({ map: boardT, roughness: 0.4 }), -RW / 2 + 0.03, 1.75, 0.3); board.rotation.y = Math.PI / 2;
+const glareT = canvasTex(128, 128, (c, w, h) => { const g = c.createRadialGradient(64, 64, 0, 64, 64, 64); g.addColorStop(0, 'rgba(255,255,255,1)'); g.addColorStop(.35, 'rgba(255,255,255,.75)'); g.addColorStop(1, 'rgba(255,255,255,0)'); c.fillStyle = g; c.fillRect(0, 0, w, h); });
+const glare = plane(1.5, 1.5, new THREE.MeshBasicMaterial({ map: glareT, transparent: true, depthWrite: false }), -RW / 2 + 0.05, 2.25, 0.2); glare.rotation.y = Math.PI / 2;
+const boardLamp = box(0.14, 0.14, 0.22, std({ color: 0x222222 }), -RW / 2 + 1.1, RH - 0.3, 0.3);
+
+// rope barrier
+const postM = std({ color: 0x8d9296, metalness: 0.7, roughness: 0.35 }), ropeM = std({ color: 0xb01818 });
+[-3, 0, 3].forEach(x => { const p = new THREE.Mesh(new THREE.CylinderGeometry(0.035, 0.035, 0.95, 12), postM); p.position.set(x, 0.475, -1.2); scene.add(p); const b = new THREE.Mesh(new THREE.CylinderGeometry(0.16, 0.16, 0.03, 20), postM); b.position.set(x, 0.015, -1.2); scene.add(b); });
+[-1.5, 1.5].forEach(x => box(3, 0.05, 0.02, ropeM, x, 0.86, -1.2));
+
+// ---------- puppets ----------
+const coneT = canvasTex(64, 256, (c, w, h) => { const g = c.createLinearGradient(0, 0, 0, h); g.addColorStop(0, 'rgba(255,230,180,.55)'); g.addColorStop(1, 'rgba(255,230,180,0)'); c.fillStyle = g; c.fillRect(0, 0, w, h); });
+const poolT = glareT;
+function labelTex(name, sub) {
+  return canvasTex(640, 200, (c, w, h) => {
+    c.fillStyle = '#F0EAD8'; c.fillRect(0, 0, w, h); c.fillStyle = '#A8432E'; c.fillRect(0, 0, 26, h);
+    c.fillStyle = '#14231E'; c.font = '900 64px "Noto Serif TC","Songti TC","PMingLiU",serif'; c.fillText(name, 54, 92, w - 80);
+    c.fillStyle = '#46524c'; c.font = '34px "Noto Sans TC","PingFang TC","Microsoft JhengHei",sans-serif'; c.fillText(sub, 56, 152, w - 80);
+  });
+}
+function cardTex(name) { return canvasTex(256, 72, (c, w, h) => { c.fillStyle = '#fff'; c.fillRect(0, 0, w, h); c.fillStyle = '#222'; c.font = 'bold 30px sans-serif'; c.textAlign = 'center'; c.fillText(name, w / 2, 47, w - 16); }); }
+const acrM = new THREE.MeshStandardMaterial({ color: 0xdff2fa, transparent: true, opacity: 0, roughness: 0.05, metalness: 0, depthWrite: false, side: THREE.DoubleSide });
+const edgeM = new THREE.LineBasicMaterial({ color: 0xe8f6fc, transparent: true, opacity: 0 });
+const plinthM = std({ color: 0x24292a });
+
+PUPPETS.forEach((p, i) => {
+  const t = tex(p.f + '.png');
+  p.mat = std({ map: t, transparent: true, alphaTest: 0.4, side: THREE.DoubleSide });
+  p.mesh = plane(1, 1, p.mat, p.x0, TOP + p.h / 2, p.z0);
+  p.aspect = 0.7; p.k = 1;
+  const im = new Image(); im.onload = () => { p.aspect = im.naturalWidth / im.naturalHeight; dirty = true; }; im.src = p.f + '.png';
+  p.card = plane(0.34, 0.095, std({ map: cardTex(p.name || '戲偶') }), p.x0, TOP + 0.06, p.z0 + 0.32); p.card.rotation.x = -0.5;
+  if (p.slot !== undefined) {
+    p.plinth = box(1, 1, 0.9, plinthM, SLOT_X[p.slot], TOP, TZ); p.plinth.visible = false;
+    p.spot = new THREE.SpotLight(0xffe3b0, 0, 9, 0.5, 0.6, 1.2); p.spot.position.set(SLOT_X[p.slot], RH - 0.25, -0.9); scene.add(p.spot); scene.add(p.spot.target);
+    box(0.13, 0.2, 0.13, std({ color: 0x1b1b1b }), SLOT_X[p.slot], RH - 0.2, -0.9);
+    p.cone = new THREE.Mesh(new THREE.ConeGeometry(0.62, 3.0, 24, 1, true), new THREE.MeshBasicMaterial({ map: coneT, transparent: true, opacity: 0, depthWrite: false, side: THREE.DoubleSide, blending: THREE.AdditiveBlending })); scene.add(p.cone);
+    p.pool = plane(1.7, 1.2, new THREE.MeshBasicMaterial({ map: poolT, color: 0xffdc9a, transparent: true, opacity: 0, depthWrite: false, blending: THREE.AdditiveBlending }), SLOT_X[p.slot], TOP + 0.012, TZ); p.pool.rotation.x = -Math.PI / 2;
+    p.label = plane(1.0, 0.31, new THREE.MeshBasicMaterial({ map: labelTex(p.name, p.sub), transparent: true, opacity: 0 }), SLOT_X[p.slot], TOP - 0.24, TZ + 0.96);
+    p.acr = new THREE.Mesh(new THREE.BoxGeometry(1, 1, 1), acrM); scene.add(p.acr);
+    p.edge = new THREE.LineSegments(new THREE.EdgesGeometry(new THREE.BoxGeometry(1, 1, 1)), edgeM); scene.add(p.edge);
+  }
+});
+// two flying puppets hung from the ceiling, as in the real hall
+const strM = new THREE.LineBasicMaterial({ color: 0x333333 });
+const FLY = [{ f: 'fly1', x: -1.9, y: 3.05, z: -2.4, w: 1.5, h: 1.07 }, { f: 'fly2', x: 2.5, y: 2.95, z: -2.2, w: 0.95, h: 0.88 }];
+FLY.forEach(f => { f.mat = std({ map: tex(f.f + '.png'), transparent: true, alphaTest: 0.4, side: THREE.DoubleSide }); f.mesh = plane(f.w, f.h, f.mat, f.x, f.y, f.z);
+  const g = new THREE.BufferGeometry().setFromPoints([new THREE.Vector3(f.x, f.y + f.h / 2 - 0.05, f.z), new THREE.Vector3(f.x, RH, f.z)]); scene.add(new THREE.Line(g, strM));
+  f.spot = new THREE.SpotLight(0xffe3b0, 0, 6, 0.42, 0.6, 1.2); f.spot.position.set(f.x, RH - 0.2, f.z + 2.0); f.spot.target.position.set(f.x, f.y, f.z); scene.add(f.spot); scene.add(f.spot.target); });
+
+// ---------- camera ----------
+const cam = { yaw: 0.22, pitch: 0.1, dist: 8.2 }, camT = { ...cam };
+const target = new THREE.Vector3(0, 1.75, -2.4);
+function placeCamera() {
+  const cp = Math.cos(cam.pitch);
+  camera.position.set(target.x + Math.sin(cam.yaw) * cp * cam.dist, target.y + Math.sin(cam.pitch) * cam.dist, target.z + Math.cos(cam.yaw) * cp * cam.dist);
+  camera.position.x = Math.max(-RW / 2 + 0.4, Math.min(RW / 2 - 0.4, camera.position.x));
+  camera.position.y = Math.max(0.5, Math.min(RH - 0.3, camera.position.y));
+  camera.lookAt(target);
+}
+function resize() { const w = stage.clientWidth, h = stage.clientHeight; if (!w || !h) return; renderer.setSize(w, h, false); camera.aspect = w / h; camera.fov = w / h < 1 ? 62 : 42; camera.updateProjectionMatrix(); dirty = true; kick(); }
+
+// ---------- per-frame update ----------
+const L = (a, b, t) => a + (b - a) * t;
+function update() {
+  const amb = v.amb, day = 1 - v.tc, ts = v.ts, tr = v.tr;
+  hemi.intensity = 0.05 + 0.9 * Math.pow(amb, 1.7) + 0.1 * day; fill.intensity = 0.42 * Math.pow(amb, 1.5);
+  tubeM.color.setScalar(0.12 + 0.88 * amb);
+  sunL.intensity = sunR.intensity = 0.45 * day;
+  winMats.forEach(m => m.color.setScalar(0.25 + 0.75 * day));
+  curtains.forEach(c => { c.scale.x = Math.max(0.001, v.tc); c.visible = v.tc > 0.01; });
+  patches.forEach(p => { p.material.opacity = 0.5 * day; p.visible = day > 0.01; });
+  glare.material.opacity = (1 - v.tg) * (0.35 + 0.65 * amb); glare.visible = glare.material.opacity > 0.01;
+  boardLamp.rotation.x = -0.9 * v.tg;
+  darkPanel.material.opacity = v.tb; darkPanel.visible = v.tb > 0.01; banner.visible = v.tb < 0.985;
+  acrM.opacity = 0.16 * v.ta; edgeM.opacity = 0.9 * v.ta;
+  const yaw = Math.atan2(camera.position.x, camera.position.z - TZ) * 0.6;
+  for (const p of PUPPETS) {
+    const keep = p.slot !== undefined;
+    const k = keep ? 1 : 1 - tr;                       // puppets taken off display shrink away
+    const lift = keep ? SLOT_H[p.slot] * tr : 0;
+    const x = keep ? L(p.x0, SLOT_X[p.slot], tr) : p.x0, z = keep ? L(p.z0, TZ, tr) : p.z0;
+    const h = p.h * (keep ? 1 + 0.12 * tr : 1), w = h * p.aspect;
+    p.mesh.visible = k > 0.02; p.mesh.scale.set(w * k, h * k, 1); p.mesh.position.set(x, TOP + lift + h * k / 2, z); p.mesh.rotation.y = yaw;
+    p.card.visible = k > 0.5 && v.tl < 0.5; p.card.position.set(x, TOP + lift + 0.06, z + 0.34);
+    if (!keep) continue;
+    p.plinth.visible = lift > 0.005; p.plinth.scale.set(Math.max(1.0, w + 0.25), Math.max(0.001, lift), 1); p.plinth.position.set(x, TOP + lift / 2, z);
+    p.spot.intensity = ts * 2.6; p.spot.angle = L(0.52, 0.34, tr); p.spot.target.position.set(x, TOP + lift + h * 0.55, z);
+    p.spot.position.x = L(SLOT_X[p.slot] * 0.9, SLOT_X[p.slot], tr);
+    p.cone.material.opacity = ts * 0.5; p.cone.visible = ts > 0.01; p.cone.position.set(p.spot.position.x, RH - 1.6, L(-1.8, -2.0, tr)); p.cone.rotation.x = -0.32;
+    p.pool.material.opacity = ts * 0.55; p.pool.visible = ts > 0.01; p.pool.position.set(x, TOP + lift + 0.012, z + 0.1); p.pool.scale.setScalar(L(1.3, 1, tr));
+    p.label.material.opacity = v.tl; p.label.visible = v.tl > 0.01; p.label.position.x = x; p.label.position.y = TOP - 0.24 - 0.12 * (1 - v.tl);
+    const on2 = v.ta > 0.01; p.acr.visible = p.edge.visible = on2;
+    if (on2) { const bw = Math.max(1.0, w + 0.25), bh = h + 0.12; for (const m of [p.acr, p.edge]) { m.scale.set(bw, bh, 0.9); m.position.set(x, TOP + lift + bh / 2, z); } }
+  }
+  for (const f of FLY) { f.spot.intensity = ts * 2.2; f.mesh.rotation.y = yaw; }
+}
+
+let dirty = true, running = false, last = 0, dragging = false, idleAt = performance.now();
+function kick() { if (!running) { running = true; last = performance.now(); requestAnimationFrame(tick); } }
+function ease(c, t, dt, k) { const d = t - c; return Math.abs(d) < 0.0008 ? t : c + (reduce ? d : d * (1 - Math.exp(-dt * k))); }
+function tick(now) {
+  const dt = Math.min(0.05, (now - last) / 1000); last = now; let moving = pending > 0;
+  for (const key in tgt) { const n = ease(v[key], tgt[key], dt, 2.6); if (n !== v[key]) { v[key] = n; moving = true; } }
+  for (const key in camT) { const n = ease(cam[key], camT[key], dt, 6); if (n !== cam[key]) { cam[key] = n; moving = true; } }
+  if (!reduce && !dragging && !window.__still && now - idleAt > 2500) { camT.yaw = 0.3 * Math.sin((now - idleAt - 2500) / 5200 + Math.asin(Math.max(-1, Math.min(1, swayFrom / 0.3)))); moving = true; }
+  if (moving || dirty || dragging) { placeCamera(); update(); renderer.render(scene, camera); dirty = false; }
+  requestAnimationFrame(tick);
+}
+let swayFrom = cam.yaw;
+function touchIdle() { idleAt = performance.now(); swayFrom = Math.max(-0.3, Math.min(0.3, camT.yaw)); }
+
+// ---------- pointer ----------
+const pts = new Map(); let pinch = 0;
+stage.addEventListener('pointerdown', e => { if (e.target.closest('button')) return; pts.set(e.pointerId, [e.clientX, e.clientY]); dragging = true; stage.classList.add('grab'); try { stage.setPointerCapture(e.pointerId); } catch (_) {} stopPlay(); touchIdle(); });
+stage.addEventListener('pointermove', e => {
+  if (!pts.has(e.pointerId)) return; const p = pts.get(e.pointerId), dx = e.clientX - p[0], dy = e.clientY - p[1]; pts.set(e.pointerId, [e.clientX, e.clientY]);
+  if (pts.size === 1) { camT.yaw = Math.max(-1.15, Math.min(1.15, camT.yaw - dx * 0.006)); camT.pitch = Math.max(-0.05, Math.min(0.55, camT.pitch + dy * 0.004)); }
+  else if (pts.size === 2) { const a = [...pts.values()], d = Math.hypot(a[0][0] - a[1][0], a[0][1] - a[1][1]); if (pinch) camT.dist = Math.max(3.5, Math.min(9.5, camT.dist * pinch / d)); pinch = d; }
+  touchIdle();
+});
+const up = e => { pts.delete(e.pointerId); pinch = 0; if (!pts.size) { dragging = false; stage.classList.remove('grab'); } touchIdle(); };
+stage.addEventListener('pointerup', up); stage.addEventListener('pointercancel', up);
+stage.addEventListener('wheel', e => { e.preventDefault(); camT.dist = Math.max(3.5, Math.min(9.5, camT.dist * (1 + Math.sign(e.deltaY) * 0.08))); touchIdle(); }, { passive: false });
+
+// ---------- controls ----------
+function apply() {
+  tgt.tc = +on.curtain; tgt.tg = +on.glare; tgt.ts = +on.spots; tgt.tb = +on.back; tgt.tr = +on.reduce; tgt.tl = +on.labels; tgt.ta = +on.acrylic;
+  if (on.lights && tgt.amb > 0.3) setAmb(25);
+  if (!on.lights && tgt.amb < 1) setAmb(100);
+  STEPS.forEach(s => $('st-' + s.id).setAttribute('aria-pressed', String(on[s.id])));
+  const n = STEPS.filter(s => on[s.id]).length;
+  $('badge').textContent = n ? `已套用 ${n} / 8 項改進（模擬）` : '現況（模擬）';
+}
+function setAmb(p) { $('amb').value = p; $('ambv').textContent = p + '%'; tgt.amb = p / 100; }
+let hudT;
+function hud(m) { const h = $('hud'); h.textContent = m; h.classList.add('on'); clearTimeout(hudT); hudT = setTimeout(() => h.classList.remove('on'), 1700); }
+function toggle(id, val) { on[id] = val === undefined ? !on[id] : val; const i = STEPS.findIndex(s => s.id === id); hud((on[id] ? '' : '取消：') + (i + 1) + '. ' + STEPS[i].t); apply(); }
+STEPS.forEach((s, i) => {
+  const b = document.createElement('button'); b.type = 'button'; b.className = 'step'; b.id = 'st-' + s.id; b.setAttribute('aria-pressed', 'false');
+  b.innerHTML = `<span class="n">${i + 1}</span><span><b></b><small></small></span><span class="sw" aria-hidden="true"></span>`;
+  b.querySelector('b').textContent = s.t; b.querySelector('small').textContent = s.s;
+  b.addEventListener('click', () => { stopPlay(); toggle(s.id); }); $('steps').append(b);
+});
+$('amb').addEventListener('input', e => { stopPlay(); const p = +e.target.value; $('ambv').textContent = p + '%'; tgt.amb = p / 100; on.lights = p < 100; $('st-lights').setAttribute('aria-pressed', String(on.lights)); });
+let playT = null, saved = null;
+function stopPlay() { if (playT) { clearTimeout(playT); playT = null; $('play').textContent = '依序展示'; } }
+function resetAll() { STEPS.forEach(s => on[s.id] = false); setAmb(100); apply(); }
+function play() { if (playT) { stopPlay(); return; } resetAll(); $('play').textContent = '暫停'; let i = 0; const next = () => { if (i >= STEPS.length) { stopPlay(); return; } toggle(STEPS[i++].id, true); playT = setTimeout(next, 2800); }; playT = setTimeout(next, 900); }
+function beforeAfter() { stopPlay(); if (STEPS.some(s => on[s.id])) { saved = { ...on }; STEPS.forEach(s => on[s.id] = false); hud('改造前'); } else { const src = saved || Object.fromEntries(STEPS.map(s => [s.id, true])); STEPS.forEach(s => on[s.id] = src[s.id]); hud('改造後'); } apply(); }
+$('play').addEventListener('click', play); $('ab').addEventListener('click', beforeAfter);
+$('reset').addEventListener('click', () => { stopPlay(); saved = null; resetAll(); hud('回到現況'); });
+$('fs').addEventListener('click', () => { if (document.fullscreenElement) { document.exitFullscreen(); return; } const p = document.documentElement.requestFullscreen && document.documentElement.requestFullscreen(); if (p && p.catch) p.catch(() => hud('這個畫面不能全螢幕')); });
+addEventListener('keydown', e => {
+  if (e.metaKey || e.ctrlKey || e.altKey) return; const k = e.key, n = +k;
+  if (n >= 1 && n <= 8) { stopPlay(); toggle(STEPS[n - 1].id); }
+  else if (k === '0') { stopPlay(); saved = null; resetAll(); hud('回到現況'); }
+  else if (k === ' ' && !(e.target instanceof HTMLButtonElement)) { e.preventDefault(); play(); }
+  else if (k === 'b' || k === 'B') beforeAfter();
+  else if (k === 'f' || k === 'F') $('fs').click();
+});
+
+window.__hall = { cam: camT, set(o) { Object.assign(camT, o); Object.assign(cam, o); dirty = true; } };
+apply(); resize();
+if (window.ResizeObserver) new ResizeObserver(resize).observe(stage); else addEventListener('resize', resize);
+$('msg').remove(); kick();
+})();
+</script>
+</body>
+</html>
