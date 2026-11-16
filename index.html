@@ -138,8 +138,6 @@ const loader = new THREE.TextureLoader();
 let pending = 0;
 function tex(url) { pending++; const t = loader.load(url, () => { pending--; dirty = true; }, undefined, () => { pending--; }); t.encoding = THREE.sRGBEncoding; t.anisotropy = 4; return t; }
 function canvasTex(w, h, draw) { const c = document.createElement('canvas'); c.width = w; c.height = h; draw(c.getContext('2d'), w, h); const t = new THREE.CanvasTexture(c); t.encoding = THREE.sRGBEncoding; t.anisotropy = 4; return t; }
-function texL(url) { pending++; return loader.load(url, () => { pending--; dirty = true; }, undefined, () => { pending--; }); }
-const relief = f => ({ displacementMap: texL(f + '_d.png'), displacementScale: 0.13, normalMap: texL(f + '_n.png'), normalScale: new THREE.Vector2(0.9, 0.9) });
 const std = o => new THREE.MeshStandardMaterial(Object.assign({ roughness: 0.95, metalness: 0 }, o));
 function box(w, h, d, mat, x, y, z) { const m = new THREE.Mesh(new THREE.BoxGeometry(w, h, d), mat); m.position.set(x, y, z); scene.add(m); return m; }
 function plane(w, h, mat, x, y, z) { const m = new THREE.Mesh(new THREE.PlaneGeometry(w, h), mat); m.position.set(x, y, z); scene.add(m); return m; }
@@ -216,8 +214,8 @@ const plinthM = std({ color: 0x24292a });
 
 PUPPETS.forEach((p, i) => {
   const t = tex(p.f + '.png');
-  p.mat = std(Object.assign({ map: t, transparent: true, alphaTest: 0.4, side: THREE.DoubleSide }, relief(p.f)));
-  p.mesh = plane(1, 1, p.mat, p.x0, TOP + p.h / 2, p.z0); p.mesh.geometry = new THREE.PlaneGeometry(1, 1, 90, 110);
+  p.mat = std({ map: t, transparent: true, alphaTest: 0.4, side: THREE.DoubleSide });
+  p.mesh = plane(1, 1, p.mat, p.x0, TOP + p.h / 2, p.z0);
   p.aspect = 0.7; p.k = 1;
   const im = new Image(); im.onload = () => { p.aspect = im.naturalWidth / im.naturalHeight; dirty = true; }; im.src = p.f + '.png';
   p.card = plane(0.34, 0.095, std({ map: cardTex(p.name || '戲偶') }), p.x0, TOP + 0.06, p.z0 + 0.32); p.card.rotation.x = -0.5;
@@ -235,7 +233,7 @@ PUPPETS.forEach((p, i) => {
 // two flying puppets hung from the ceiling, as in the real hall
 const strM = new THREE.LineBasicMaterial({ color: 0x333333 });
 const FLY = [{ f: 'fly1', x: -1.9, y: 3.05, z: -2.4, w: 1.5, h: 1.07 }, { f: 'fly2', x: 2.5, y: 2.95, z: -2.2, w: 0.95, h: 0.88 }];
-FLY.forEach(f => { f.mat = std(Object.assign({ map: tex(f.f + '.png'), transparent: true, alphaTest: 0.4, side: THREE.DoubleSide }, relief(f.f))); f.mesh = plane(f.w, f.h, f.mat, f.x, f.y, f.z); f.mesh.geometry = new THREE.PlaneGeometry(f.w, f.h, 80, 60);
+FLY.forEach(f => { f.mat = std({ map: tex(f.f + '.png'), transparent: true, alphaTest: 0.4, side: THREE.DoubleSide }); f.mesh = plane(f.w, f.h, f.mat, f.x, f.y, f.z);
   const g = new THREE.BufferGeometry().setFromPoints([new THREE.Vector3(f.x, f.y + f.h / 2 - 0.05, f.z), new THREE.Vector3(f.x, RH, f.z)]); scene.add(new THREE.Line(g, strM));
   f.spot = new THREE.SpotLight(0xffe3b0, 0, 6, 0.42, 0.6, 1.2); f.spot.position.set(f.x, RH - 0.2, f.z + 2.0); f.spot.target.position.set(f.x, f.y, f.z); scene.add(f.spot); scene.add(f.spot.target); });
 
@@ -265,7 +263,7 @@ function update() {
   boardLamp.rotation.x = -0.9 * v.tg;
   darkPanel.material.opacity = v.tb; darkPanel.visible = v.tb > 0.01; banner.visible = v.tb < 0.985;
   acrM.opacity = 0.16 * v.ta; edgeM.opacity = 0.9 * v.ta;
-  const yaw = Math.atan2(camera.position.x, camera.position.z - TZ) * 0.42;
+  const yaw = Math.atan2(camera.position.x, camera.position.z - TZ) * 0.6;
   for (const p of PUPPETS) {
     const keep = p.slot !== undefined;
     const k = keep ? 1 : 1 - tr;                       // puppets taken off display shrink away
