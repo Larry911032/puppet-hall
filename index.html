@@ -139,7 +139,7 @@ let pending = 0;
 function tex(url) { pending++; const t = loader.load(url, () => { pending--; dirty = true; }, undefined, () => { pending--; }); t.encoding = THREE.sRGBEncoding; t.anisotropy = 4; return t; }
 function canvasTex(w, h, draw) { const c = document.createElement('canvas'); c.width = w; c.height = h; draw(c.getContext('2d'), w, h); const t = new THREE.CanvasTexture(c); t.encoding = THREE.sRGBEncoding; t.anisotropy = 4; return t; }
 function texL(url) { pending++; return loader.load(url, () => { pending--; dirty = true; }, undefined, () => { pending--; }); }
-const relief = f => ({ displacementMap: texL(f + '_d.png'), displacementScale: 0.26, normalMap: texL(f + '_n.png'), normalScale: new THREE.Vector2(0.9, 0.9) });
+const relief = f => ({ displacementMap: texL(f + '_d.png'), displacementScale: 0.13, normalMap: texL(f + '_n.png'), normalScale: new THREE.Vector2(0.9, 0.9) });
 const std = o => new THREE.MeshStandardMaterial(Object.assign({ roughness: 0.95, metalness: 0 }, o));
 function box(w, h, d, mat, x, y, z) { const m = new THREE.Mesh(new THREE.BoxGeometry(w, h, d), mat); m.position.set(x, y, z); scene.add(m); return m; }
 function plane(w, h, mat, x, y, z) { const m = new THREE.Mesh(new THREE.PlaneGeometry(w, h), mat); m.position.set(x, y, z); scene.add(m); return m; }
@@ -265,7 +265,7 @@ function update() {
   boardLamp.rotation.x = -0.9 * v.tg;
   darkPanel.material.opacity = v.tb; darkPanel.visible = v.tb > 0.01; banner.visible = v.tb < 0.985;
   acrM.opacity = 0.16 * v.ta; edgeM.opacity = 0.9 * v.ta;
-  const yaw = Math.atan2(camera.position.x, camera.position.z - TZ) * 0.2;
+  const yaw = Math.atan2(camera.position.x, camera.position.z - TZ) * 0.42;
   for (const p of PUPPETS) {
     const keep = p.slot !== undefined;
     const k = keep ? 1 : 1 - tr;                       // puppets taken off display shrink away
